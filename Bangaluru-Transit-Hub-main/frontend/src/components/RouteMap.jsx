@@ -1,26 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { APIProvider, Map, AdvancedMarker, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 
-// Helper component to draw the actual road path using Directions API, with a fallback to Polyline
+// Helper component to draw Polyline and fit bounds
 const MapDirections = ({ selectedRoute }) => {
   const map = useMap();
-  const routesLibrary = useMapsLibrary('routes');
-  const [directionsService, setDirectionsService] = useState();
-  const [directionsRenderer, setDirectionsRenderer] = useState();
-  const fallbackPolylineRef = useRef(null);
+  const polylineRef = useRef(null);
 
-  // Initialize service and renderer once library is loaded
   useEffect(() => {
-    if (!routesLibrary || !map) return;
-    setDirectionsService(new routesLibrary.DirectionsService());
-    setDirectionsRenderer(new routesLibrary.DirectionsRenderer({ map }));
-  }, [routesLibrary, map]);
+    if (!map) return;
 
-  // Request actual route paths when selectedRoute changes
-  useEffect(() => {
-    if (!directionsService || !directionsRenderer || !selectedRoute?.path || selectedRoute.path.length < 2) {
-      if (directionsRenderer) directionsRenderer.setDirections(null);
-      if (fallbackPolylineRef.current) fallbackPolylineRef.current.setMap(null);
+    // Clear existing polyline
+    if (polylineRef.current) {
+      polylineRef.current.setMap(null);
+      polylineRef.current = null;
+    }
+
+    if (!selectedRoute || !selectedRoute.path || selectedRoute.path.length < 2) {
       return;
     }
 
@@ -29,70 +24,39 @@ const MapDirections = ({ selectedRoute }) => {
       return coord;
     });
 
-    const origin = pathCoords[0];
-    const destination = pathCoords[pathCoords.length - 1];
-
     let pathColor = '#00E676'; // Electric Green (Metro)
     if (selectedRoute.type === 'BMTC Bus') pathColor = '#3b82f6'; // Blue
     if (selectedRoute.type === 'Direct Cab') pathColor = '#f97316'; // Orange
 
-    // We suppress markers because we already draw custom AdvancedMarkers for start/end
-    directionsRenderer.setOptions({
-      suppressMarkers: true,
-      preserveViewport: false, 
-      polylineOptions: {
-        strokeColor: pathColor,
-        strokeWeight: 5,
-        strokeOpacity: 0.85
-      }
-    });
-
-    // Helper to draw a fallback straight line
-    const drawFallbackLine = () => {
-      console.warn("Falling back to straight Polyline due to Directions API failure.");
-      if (fallbackPolylineRef.current) fallbackPolylineRef.current.setMap(null);
-      
-      const isDashed = selectedRoute.type === 'Metro + Walk';
-      const lineSymbol = { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 4 };
-
-      fallbackPolylineRef.current = new window.google.maps.Polyline({
-        path: [origin, destination],
-        geodesic: true,
-        strokeColor: pathColor,
-        strokeOpacity: isDashed ? 0 : 0.85,
-        strokeWeight: 5,
-        icons: isDashed ? [{ icon: lineSymbol, offset: '0', repeat: '20px' }] : [],
-      });
-      fallbackPolylineRef.current.setMap(map);
-
-      // Auto-fit bounds for the fallback line
-      const bounds = new window.google.maps.LatLngBounds();
-      bounds.extend(origin);
-      bounds.extend(destination);
-      map.fitBounds(bounds, { top: 50, bottom: 50, left: 50, right: 50 });
+    const lineSymbol = {
+      path: 'M 0,-1 0,1',
+      strokeOpacity: 1,
+      scale: 4
     };
 
-    let travelMode = window.google.maps.TravelMode.DRIVING;
-    if (selectedRoute.type === 'Metro + Walk') travelMode = window.google.maps.TravelMode.TRANSIT;
+    const isDashed = selectedRoute.type === 'Metro + Walk';
 
-    directionsService.route({
-      origin,
-      destination,
-      travelMode: travelMode
-    }).then(response => {
-      if (fallbackPolylineRef.current) fallbackPolylineRef.current.setMap(null);
-      directionsRenderer.setDirections(response);
-    }).catch(error => {
-      console.error("Failed to fetch directions:", error);
-      // Fallback to drawing a straight line if API is denied
-      drawFallbackLine();
+    polylineRef.current = new window.google.maps.Polyline({
+      path: pathCoords,
+      geodesic: true,
+      strokeColor: pathColor,
+      strokeOpacity: isDashed ? 0 : 0.85,
+      strokeWeight: 5,
+      icons: isDashed ? [{
+        icon: lineSymbol,
+        offset: '0',
+        repeat: '20px'
+      }] : [],
     });
 
-    return () => {
-      directionsRenderer.setDirections(null);
-      if (fallbackPolylineRef.current) fallbackPolylineRef.current.setMap(null);
-    };
-  }, [directionsService, directionsRenderer, selectedRoute, map]);
+    polylineRef.current.setMap(map);
+
+    // Auto-fit bounds
+    const bounds = new window.google.maps.LatLngBounds();
+    pathCoords.forEach(coord => bounds.extend(coord));
+    map.fitBounds(bounds, { top: 50, bottom: 50, left: 50, right: 50 });
+
+  }, [map, selectedRoute]);
 
   return null;
 };
@@ -165,6 +129,18 @@ export default function RouteMap({ selectedRoute, start, destination }) {
             <span className="w-2.5 h-2.5 rounded-full bg-orange-500"></span>
             <span>Destination: {destination}</span>
           </div>
+          
+          {startCoord && destCoord && (
+            <a 
+              href={`https://www.google.com/maps/dir/?api=1&origin=${startCoord.lat},${startCoord.lng}&destination=${destCoord.lat},${destCoord.lng}&travelmode=${selectedRoute.type === 'Metro + Walk' ? 'transit' : 'driving'}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 w-full py-1.5 bg-blue-600/90 hover:bg-blue-500 text-white rounded text-center transition-colors font-medium flex items-center justify-center gap-1.5 shadow-sm border border-blue-400/20"
+            >
+              <Icons.ExternalLink className="w-3 h-3" />
+              Open in Google Maps
+            </a>
+          )}
         </div>
       )}
 
@@ -189,6 +165,13 @@ const Icons = {
       <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
       <line x1="9" y1="3" x2="9" y2="18" />
       <line x1="15" y1="6" x2="15" y2="21" />
+    </svg>
+  ),
+  ExternalLink: ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
     </svg>
   )
 };
