@@ -1,0 +1,26 @@
+{
+  "name": "bengaluru-transit-hub",
+  "version": "1.0.0",
+  "description": "Intelligent, multimodal transit routing web application for Bengaluru",
+  "main": "index.js",
+  "scripts": {
+    "install:all": "npm install && npm install --prefix backend && npm install --prefix frontend",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev": "concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "start": "concurrently \"npm run start --prefix backend\" \"npm run start --prefix frontend\""
+  },
+  "keywords": [
+    "transit",
+    "routing",
+    "bengaluru",
+    "leaflet",
+    "react",
+    "express"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
